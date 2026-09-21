@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI原稿の赤字点検 — 納品前に、人が見る所だけを赤で出す</title>
+<style>
+  :root { --red:#d93a2b; --redbg:#fde3df; --yel:#b88600; --yelbg:#fff3c4; --gray:#8a8f98; --ink:#1f2328; --line:#e3e6ea; --ok:#1a7f4b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: "Hiragino Sans","Noto Sans JP","Yu Gothic",sans-serif; color:var(--ink); background:#f7f8fa; line-height:1.7; }
+  header { background:#fff; border-bottom:1px solid var(--line); padding:18px 20px; }
+  header h1 { margin:0; font-size:20px; }
+  header p { margin:4px 0 0; color:#57606a; font-size:13px; }
+  main { max-width:1100px; margin:0 auto; padding:16px; display:grid; gap:16px; }
+  section { background:#fff; border:1px solid var(--line); border-radius:10px; padding:16px; }
+  h2 { font-size:16px; margin:0 0 10px; }
+  h2 .step { display:inline-block; background:var(--ink); color:#fff; border-radius:999px; width:22px; height:22px; text-align:center; font-size:13px; line-height:22px; margin-right:6px; }
+  textarea { width:100%; min-height:180px; padding:10px; border:1px solid #cfd4da; border-radius:8px; font:inherit; font-size:14px; }
+  textarea.memo { min-height:90px; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:8px 0; }
+  button { font:inherit; font-size:14px; padding:8px 14px; border-radius:8px; border:1px solid #cfd4da; background:#fff; cursor:pointer; }
+  button.main { background:var(--ink); color:#fff; border-color:var(--ink); font-weight:700; }
+  select { font:inherit; font-size:14px; padding:7px; border-radius:8px; border:1px solid #cfd4da; }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+  @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } }
+  .verdict { padding:12px 14px; border-radius:8px; font-weight:700; font-size:16px; }
+  .verdict.stop { background:var(--redbg); color:var(--red); }
+  .verdict.fix { background:var(--yelbg); color:#7a5a00; }
+  .verdict.go { background:#dff5e8; color:var(--ok); }
+  .stats { display:flex; flex-wrap:wrap; gap:10px; margin:10px 0; }
+  .stat { border:1px solid var(--line); border-radius:8px; padding:6px 12px; font-size:13px; }
+  .stat b { font-size:18px; margin-right:2px; }
+  .view { white-space:pre-wrap; font-size:14px; border:1px solid var(--line); border-radius:8px; padding:12px; max-height:520px; overflow:auto; }
+  mark.r { background:var(--redbg); color:var(--red); font-weight:700; border-bottom:2px solid var(--red); }
+  mark.y { background:var(--yelbg); color:inherit; }
+  mark.g { background:#eceef1; color:var(--gray); }
+  mark.r.done { background:#e8f5ee; color:var(--ok); border-bottom-color:var(--ok); }
+  ul.list { list-style:none; margin:0; padding:0; max-height:520px; overflow:auto; }
+  ul.list li { border-bottom:1px solid var(--line); padding:8px 2px; font-size:13px; }
+  ul.list li .tag { display:inline-block; font-size:12px; font-weight:700; padding:0 6px; border-radius:4px; margin-right:6px; }
+  .tag.r { background:var(--redbg); color:var(--red); }
+  .tag.y { background:var(--yelbg); color:#7a5a00; }
+  .tag.m { background:var(--red); color:#fff; }
+  .why { color:#57606a; display:block; }
+  .fixhint { color:#1f6feb; display:block; }
+  label.chk { display:flex; gap:6px; align-items:flex-start; cursor:pointer; }
+  .note { font-size:12px; color:#57606a; }
+  .diff { padding:10px; border-radius:8px; font-size:14px; }
+  .diff.ok { background:#dff5e8; color:var(--ok); }
+  .diff.ng { background:var(--redbg); color:var(--red); font-weight:700; }
+  footer { max-width:1100px; margin:0 auto; padding:10px 16px 40px; font-size:12px; color:#57606a; }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI原稿の赤字点検</h1>
+  <p>ChatGPTなどで作った下書きを貼ると、<b style="color:#d93a2b">人が確かめる所を赤</b>、<b style="color:#7a5a00">AIっぽい言い回しを黄</b>で出します。文章はこのページの外に送りません（通信なし）。AIが書いたかどうかを判定する道具ではありません。</p>
+</header>
+<main>
+  <section>
+    <h2><span class="step">1</span>原稿と依頼メモを貼る</h2>
+    <div class="row">
+      <select id="sampleSel"></select>
+      <button id="loadSample">見本を入れる</button>
+      <span class="note">見本は、架空の依頼メモをAIに渡して実際に出てきた下書きです（手を加えていません）</span>
+    </div>
+    <div class="grid2">
+      <div>
+        <div class="note">原稿（AIの下書き）</div>
+        <textarea id="draft" placeholder="ここに原稿を貼ります"></textarea>
+      </div>
+      <div>
+        <div class="note">依頼メモ（依頼主からもらった情報。貼ると「メモにない数字」を別に出します）</div>
+        <textarea id="memo" class="memo" style="min-height:180px" placeholder="例: 初回の施術は60分 6,600円／『治る』とは書かない"></textarea>
+      </div>
+    </div>
+    <div class="row">
+      <button id="strip">チャットの記号を消す</button>
+      <button id="run" class="main">点検する</button>
+    </div>
+  </section>
+
+  <section id="resultBox" hidden>
+    <h2><span class="step">2</span>結果を見る</h2>
+    <div id="verdict" class="verdict"></div>
+    <div class="stats" id="stats"></div>
+    <div class="grid2">
+      <div>
+        <div class="note">原稿（赤 = 人が確かめる／黄 = 言い回し／灰 = 消す記号）</div>
+        <div class="view" id="view"></div>
+      </div>
+      <div>
+        <div class="note"><b>赤は、確かめたら印をつける。</b>全部に印がつくまで「まだ出さない」のままです</div>
+        <ul class="list" id="factList"></ul>
+      </div>
+    </div>
+    <h2 style="margin-top:14px">黄色（言い回し）の一覧</h2>
+    <ul class="list" id="styleList"></ul>
+  </section>
+
+  <section id="rewriteBox" hidden>
+    <h2><span class="step">3</span>黄色の文だけを、AIに直させる</h2>
+    <div class="note">文体メモ（あなたの書き方。このブラウザに保存されます）</div>
+    <textarea id="styleMemo" class="memo" placeholder="1. 文末: ...&#10;2. 一文の長さ: ..."></textarea>
+    <div class="row">
+      <button id="makePrompt" class="main">書き直しの指示文を作る</button>
+      <button id="copyPrompt">指示文をコピー</button>
+      <span class="note" id="targetsInfo"></span>
+    </div>
+    <textarea id="prompt" readonly></textarea>
+    <div class="note" style="margin-top:10px">AIの答え（「番号: 新しい文」の形）をここに貼る</div>
+    <textarea id="answer" class="memo"></textarea>
+    <div class="row">
+      <button id="apply" class="main">原稿に差し戻して点検し直す</button>
+    </div>
+    <div id="diff"></div>
+    <textarea id="after" readonly hidden></textarea>
+  </section>
+</main>
+<footer>
+  ルールの中身と、目安の値を決めた実測は記事の本文にあります。黄の目安（1000字あたり2件）は、人が書いた随筆6本が全部通る値として置いたもので、読者の反応や検索順位を保証しません。
+</footer>
+<script src="checks.js"></script>
+<script src="samples.js"></script>
+<script>
+(function () {
+  const $ = id => document.getElementById(id);
+  const S = window.AKAJI_SAMPLES || [];
+  S.forEach((s, i) => { const o = document.createElement('option'); o.value = i; o.textContent = s.name; $('sampleSel').appendChild(o); });
+  $('loadSample').onclick = () => { const s = S[$('sampleSel').value]; $('draft').value = s.text; $('memo').value = s.memo; };
+  $('styleMemo').value = localStorage.getItem('akaji.styleMemo') || '';
+  $('styleMemo').addEventListener('input', () => localStorage.setItem('akaji.styleMemo', $('styleMemo').value));
+  $('strip').onclick = () => { $('draft').value = Akaji.stripMarkup($('draft').value); };
+
+  let state = null;
+  const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+  function render() {
+    const { text, r, memoHits, done } = state;
+    // 1文字ずつ色を決める。赤 > 黄 > 灰。
+    const cls = new Array(text.length).fill('');
+    const owner = new Array(text.length).fill(-1);
+    r.style.forEach(h => { for (let i = h.start; i < h.end; i++) if (!cls[i]) cls[i] = h.density === false ? 'g' : 'y'; });
+    r.facts.forEach((h, k) => { for (let i = h.start; i < h.end; i++) { cls[i] = 'r'; owner[i] = k; } });
+    let html = '', i = 0;
+    while (i < text.length) {
+      let j = i; while (j < text.length && cls[j] === cls[i] && owner[j] === owner[i]) j++;
+      const seg = esc(text.slice(i, j));
+      if (!cls[i]) html += seg;
+      else html += `<mark class="${cls[i]}${cls[i] === 'r' && done.has(owner[i]) ? ' done' : ''}" ${owner[i] >= 0 ? `data-k="${owner[i]}"` : ''}>${seg}</mark>`;
+      i = j;
+    }
+    $('view').innerHTML = html;
+    const memoSet = new Set((memoHits || []).map(h => h.start));
+    $('factList').innerHTML = r.facts.map((h, k) => `<li><label class="chk"><input type="checkbox" data-k="${k}" ${done.has(k) ? 'checked' : ''}><span><span class="tag r">${h.label}</span>${memoSet.has(h.start) ? '<span class="tag m">依頼メモにない</span>' : ''}<b>${esc(h.match)}</b><span class="why">${esc(h.reason)}</span></span></label></li>`).join('') || '<li>赤はありません</li>';
+    $('styleList').innerHTML = r.style.map(h => `<li><span class="tag y">${esc(h.label)}</span>${esc(h.match.slice(0, 60))}${h.match.length > 60 ? '…' : ''}<span class="why">${esc(h.reason)}</span><span class="fixhint">直し方: ${esc(h.fix)}</span></li>`).join('') || '<li>黄はありません</li>';
+    const v = Akaji.verdict(r, done.size);
+    $('verdict').className = 'verdict ' + v.level; $('verdict').textContent = v.text;
+    $('stats').innerHTML = [
+      ['字', r.chars], ['赤（人が確かめる）', r.facts.length], ['うち依頼メモにない数字', memoHits ? memoHits.length : '—'],
+      ['黄（1000字あたり）', r.stylePer1000], ['消す記号', r.markupCount],
+    ].map(([k, v]) => `<div class="stat"><b>${v}</b> ${k}</div>`).join('');
+    $('factList').querySelectorAll('input').forEach(cb => cb.onchange = () => { const k = +cb.dataset.k; cb.checked ? done.add(k) : done.delete(k); render(); });
+  }
+
+  function run(text) {
+    const r = Akaji.check(text);
+    state = { text, r, memoHits: Akaji.notInMemo(text, $('memo').value), done: new Set() };
+    $('resultBox').hidden = false; $('rewriteBox').hidden = false;
+    render();
+  }
+  $('run').onclick = () => run($('draft').value);
+
+  let targets = [];
+  $('makePrompt').onclick = () => {
+    if (!state) return;
+    const p = Akaji.rewritePrompt(state.text, state.r, $('styleMemo').value);
+    targets = p.targets; $('prompt').value = p.prompt;
+    $('targetsInfo').textContent = `書き直す文: ${targets.length}文`;
+  };
+  $('copyPrompt').onclick = async () => { try { await navigator.clipboard.writeText($('prompt').value); $('copyPrompt').textContent = 'コピーしました'; } catch (e) { $('prompt').select(); } };
+  $('apply').onclick = () => {
+    if (!state || !targets.length) return;
+    const before = state.text;
+    const ap = Akaji.applyRewrite(before, targets, $('answer').value);
+    const d = Akaji.factDiff(before, ap.text);
+    $('diff').innerHTML = `<div class="diff ${d.same ? 'ok' : 'ng'}">差し戻し ${ap.applied}/${ap.expected}文。` +
+      (d.same ? '数字・日付・断定の語は、直す前と同じです。' : `書き直しで事実の語が変わりました。消えた: ${d.removed.join('、') || 'なし'}／増えた: ${d.added.join('、') || 'なし'}。この文は採用しないか、元に戻してください。`) + '</div>';
+    $('draft').value = ap.text;
+    run(ap.text);
+    $('resultBox').scrollIntoView({ behavior: 'smooth' });
+  };
+})();
+</script>
+</body>
+</html>
